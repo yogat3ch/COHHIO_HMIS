@@ -15,15 +15,27 @@
 #' @param dir_profvis \code{(character)} The directory in which all `profvis` related files will be put. **Default: `"profvis"`**. Profile-ready script copies (if `new_scripts = TRUE`) and Rprof files/directories will be placed here. Set to `NULL` to use the working directory and overwrite existing files.
 #' @param remove \code{(logical/character)} to indicate whether to remove profiling code. **Default: FALSE**. Change to `TRUE` to remove profile code but leave flags. Change to `"f"/"flags"` to remove code and flags. Remove modifies `.file` in place.
 #' @param new_script \code{(logical)} to indicate whether to write new profile-ready script copies to `dir_profvis`. **Default: TRUE**, if `FALSE` the character vector output  of the profile-ready script lines from the function can be written to a file manually.
+#' @details To time code sections, try the `{tictoc}` package with the following code: \code{profile_script("[SERVER_SCRIPT_NAME].R", profile_open = tictoc::tic(msg = glue::glue("{.lo}-{.lc}")), profile_close = tictoc::toc(log = TRUE))}
 
 
 
 
 profile_script <- function(.file, profile_open = utils::Rprof(fs::path(dir_profvis, stringr::str_remove(basename(.file),'\\.[A-Za-z\\_\\-]+$'), glue::glue('{.lo}-{.lc}'), ext = "Rprof"), interval = .02, memory.profiling = TRUE), profile_close = Rprof(NULL), dir_profvis = "profvis", remove = FALSE, new_script = TRUE) {
+  
   stopifnot(inherits(.file, "character"))
   .lines <- readr::read_lines(.file)
   .po <- rlang::enexpr(profile_open)
   .pc <- rlang::enexpr(profile_close)
+  # Add tictoc button to server
+  if (!any(stringr::str_detect(.lines, "tictoc\\:\\:tic.clearlog()")) && stringr::str_detect(rlang::expr_deparse(.po), "tic\\(")) {
+    .sf <- min(stringr::str_which(.lines, "(?:function).*(?:input).*(?:output).*(?:session)"))
+     R.utils::insert(.lines, (.sf + 1):(.sf + 4), c(
+       "tictoc::tic.clearlog()",
+       "observeEvent(input$tictoc, {",
+       "  saveRDS(tictoc::tic.log(format = FALSE), 'profvis/ttlog.rds')",
+       "})"
+     )) 
+  }
   # create dir if it doesn't exist
   if (!dir.exists(dir_profvis)) dir.create(dir_profvis)
   # data.frame of open/close flags (accounting for preceding tabs or spaces)
